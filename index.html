@@ -301,6 +301,25 @@
   .ratio.lo{background:#EAF3EC;color:#22713B}
   .stat-note{font-size:11px;color:var(--ink-soft)}
 
+  /* ── 빈시간 찾기 ── */
+  .free-row{
+    display:flex;align-items:flex-start;gap:10px;padding:8px 10px;
+    border:1px solid var(--line);border-radius:8px;background:#FCFBF8;
+  }
+  .free-row .fr-name{
+    width:96px;flex-shrink:0;font-weight:700;font-size:13px;
+    display:flex;align-items:center;gap:5px;padding-top:2px;
+  }
+  .free-row .fr-name::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c,#999);flex-shrink:0}
+  .free-row .fr-slots{display:flex;flex-wrap:wrap;gap:6px}
+  .slot{
+    padding:3px 10px;border-radius:999px;border:1px solid #BFD2C4;background:#EFF7F1;
+    font-size:12px;font-weight:600;color:#22713B;font-variant-numeric:tabular-nums;
+  }
+  .slot:hover{background:#DDEEE2}
+  .free-row .none{font-size:12px;color:#B5432A;padding-top:3px}
+  .free-row .busy-info{font-size:11px;color:var(--ink-soft);width:100%;padding-left:106px;margin-top:-2px}
+
   @media (max-width:760px){
     .cell{min-height:84px}
     .evt .t{display:none}
@@ -356,6 +375,7 @@
     <button class="nav-btn" id="nextBtn" aria-label="다음">›</button>
     <button class="today-btn" id="todayBtn">오늘</button>
   </div>
+  <button class="hd-btn stat" id="findBtn">빈시간</button>
   <button class="hd-btn stat" id="statBtn">통계</button>
   <button class="hd-btn manage" id="manageBtn">+ 관리</button>
   <div class="user-chip"><span id="userName"></span><button class="out" id="logoutBtn">로그아웃</button></div>
@@ -469,6 +489,28 @@
     </div>
     <div class="modal-foot">
       <button class="btn primary" data-close="mngOverlay">완료</button>
+    </div>
+  </div>
+</div>
+
+<!-- 빈시간 찾기 모달 -->
+<div class="overlay" id="findOverlay">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h2>상담 가능한 빈시간 찾기</h2>
+      <button class="close" data-close="findOverlay">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="stat-opts">
+        <label>날짜 <input type="date" id="findDate" style="width:auto"></label>
+        <label>시간대 <input type="time" id="findFrom" value="09:00" style="width:auto"> ~ <input type="time" id="findTo" value="18:00" style="width:auto"></label>
+        <label>최소 <input type="number" id="findMin" value="60" step="30" min="30" style="width:54px">분</label>
+      </div>
+      <div id="findResult" class="mng-list"></div>
+      <div class="stat-note" id="findNote">빈 시간대를 클릭하면 해당 변호사·시간으로 바로 일정을 등록할 수 있습니다.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn primary" data-close="findOverlay">닫기</button>
     </div>
   </div>
 </div>
@@ -885,7 +927,7 @@ function fillSelects(){
   document.getElementById('fType').innerHTML =
     state.types.map(t=>`<option value="${t.id}">${esc((t.symbol||'')+' '+t.name)}</option>`).join('');
 }
-function openEventModal(id, dateStr, lawyerId){
+function openEventModal(id, dateStr, lawyerId, presetStart, presetEnd){
   if(!state.loaded) return;
   const isEdit = !!id;
   if(!isEdit && !canEdit()) return;
@@ -911,7 +953,8 @@ function openEventModal(id, dateStr, lawyerId){
   }else{
     fTitle.value=''; fDate.value = dateStr || ymd(today);
     if(lawyerId) fLawyer.value = lawyerId;
-    fStart.value='10:00'; fEnd.value='11:00'; fLoc.value=''; fMemo.value='';
+    fStart.value=presetStart||'10:00'; fEnd.value=presetEnd||'11:00';
+    fLoc.value=''; fMemo.value='';
     fRemote.checked=false; fVideo.checked=false;
   }
   document.getElementById('evtOverlay').classList.add('open');
@@ -1121,6 +1164,94 @@ document.getElementById('statRemoteW').oninput = e=>{
   localStorage.setItem('statRemoteW', statRemoteW);
   renderStats(); renderCalendar();
 };
+
+/* ───────── 빈시간 찾기 ───────── */
+const toMin = t => { const [h,m]=(t||'0:0').split(':').map(Number); return h*60+m; };
+const toHM = n => `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
+function freeSlots(lawyerId, dateStr, from, to, minMin){
+  // 해당 변호사의 그 날짜 일정 → 바쁜 구간 (종료 없으면 시작+60분 가정)
+  const busy = state.events
+    .filter(e=>e.lawyer_id===lawyerId && e.date===dateStr)
+    .map(e=>{
+      const s = toMin(hm(e.start_time));
+      const en = e.end_time ? toMin(hm(e.end_time)) : s+60;
+      return [s, Math.max(en, s+30)];
+    })
+    .sort((a,b)=>a[0]-b[0]);
+  // 겹치는 구간 병합
+  const merged = [];
+  busy.forEach(([s,e])=>{
+    if(merged.length && s<=merged[merged.length-1][1]){
+      merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], e);
+    }else merged.push([s,e]);
+  });
+  // 빈 구간 추출
+  const slots = [];
+  let cur = from;
+  merged.forEach(([s,e])=>{
+    if(s-cur >= minMin) slots.push([cur, Math.min(s,to)]);
+    cur = Math.max(cur, e);
+  });
+  if(to-cur >= minMin) slots.push([cur, to]);
+  return { slots: slots.filter(([s,e])=>e-s>=minMin && s<to), busyCount: busy.length };
+}
+function renderFind(){
+  const dateStr = document.getElementById('findDate').value;
+  const from = toMin(document.getElementById('findFrom').value || '09:00');
+  const to = toMin(document.getElementById('findTo').value || '18:00');
+  const minMin = Number(document.getElementById('findMin').value) || 60;
+  const box = document.getElementById('findResult');
+  box.innerHTML = '';
+  if(!dateStr || to<=from){ box.innerHTML = '<div class="stat-note">날짜와 시간대를 확인해주세요.</div>'; return; }
+  const rows = state.lawyers.filter(l=> state.filterLawyers.size===0 || state.filterLawyers.has(l.id));
+  rows.forEach(l=>{
+    const { slots, busyCount } = freeSlots(l.id, dateStr, from, to, minMin);
+    const row = document.createElement('div');
+    row.className = 'free-row';
+    row.style.setProperty('--c', l.color);
+    const nm = document.createElement('div');
+    nm.className = 'fr-name';
+    nm.textContent = l.name;
+    row.appendChild(nm);
+    const sl = document.createElement('div');
+    sl.className = 'fr-slots';
+    if(slots.length===0){
+      sl.innerHTML = '<span class="none">가능한 시간 없음</span>';
+    }else{
+      slots.forEach(([s,e])=>{
+        const b = document.createElement('button');
+        b.className = 'slot';
+        b.textContent = `${toHM(s)} ~ ${toHM(e)}`;
+        b.title = canEdit() ? '클릭하면 이 시간으로 일정 등록' : '';
+        b.onclick = ()=>{
+          if(!canEdit()) return;
+          closeOverlay('findOverlay');
+          openEventModal(null, dateStr, l.id, toHM(s), toHM(Math.min(s+minMin, e)));
+        };
+        sl.appendChild(b);
+      });
+    }
+    row.appendChild(sl);
+    if(busyCount>0){
+      const bi = document.createElement('div');
+      bi.className = 'busy-info';
+      bi.textContent = `기존 일정 ${busyCount}건`;
+      row.appendChild(bi);
+    }
+    box.appendChild(row);
+  });
+  if(rows.length===0) box.innerHTML = '<div class="stat-note">표시할 변호사가 없습니다.</div>';
+}
+document.getElementById('findBtn').onclick = ()=>{
+  if(!state.loaded) return;
+  const fd = document.getElementById('findDate');
+  if(!fd.value) fd.value = ymd(today);
+  renderFind();
+  document.getElementById('findOverlay').classList.add('open');
+};
+['findDate','findFrom','findTo','findMin'].forEach(id=>{
+  document.getElementById(id).oninput = renderFind;
+});
 
 /* ───────── 공통 ───────── */
 function closeOverlay(id){ document.getElementById(id).classList.remove('open'); }
