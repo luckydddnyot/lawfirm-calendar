@@ -156,7 +156,7 @@
   /* ── 주간 리소스 뷰 ── */
   .wk-scroll{overflow-x:auto}
   .wk-table{
-    width:100%;border-collapse:separate;border-spacing:0;min-width:860px;
+    width:100%;border-collapse:separate;border-spacing:0;min-width:1100px;
     background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
   }
   .wk-table th,.wk-table td{
@@ -186,6 +186,15 @@
   .wk-cell.today-col{background:var(--today)}
   .wk-cell .evt{margin-bottom:3px;white-space:normal;line-height:1.25}
   .wk-cell .evt .title{white-space:normal}
+  .wk-table th.wk-stat,.wk-table td.wk-stat{
+    width:34px;min-width:30px;text-align:center;padding:4px 3px;font-size:12px;
+    background:#FAF8F2;font-variant-numeric:tabular-nums;cursor:default;vertical-align:middle;
+  }
+  .wk-table thead th.wk-stat{font-size:12px}
+  .wk-table td.wk-stat.score{font-weight:700}
+  .wk-table td.wk-stat.ratio{font-weight:700;font-size:11px;min-width:52px}
+  .wk-table td.wk-stat.hi{background:#FBEDE9;color:#B5432A}
+  .wk-table td.wk-stat.lo{background:#EAF3EC;color:#22713B}
 
   /* ── Modal ── */
   .overlay{
@@ -338,8 +347,8 @@
   </div>
   <div class="sync" id="syncBadge"><span class="led"></span><span id="syncText">연결 중…</span></div>
   <div class="view-toggle">
-    <button id="modeMonth" class="on">월간</button>
-    <button id="modeWeek">주간</button>
+    <button id="modeMonth">월간</button>
+    <button id="modeWeek" class="on">주간</button>
   </div>
   <div class="month-nav">
     <button class="nav-btn" id="prevBtn" aria-label="이전">‹</button>
@@ -505,13 +514,34 @@ const weekStartOf = d => addDays(d, -d.getDay()); // 일요일 시작
 const state = {
   lawyers: [], types: [], events: [],
   filterLawyers: new Set(), filterTypes: new Set(),
-  mode: 'month',                                   // 'month' | 'week'
+  mode: 'week',                                    // 'month' | 'week'
   view: { y: today.getFullYear(), m: today.getMonth() },
   weekStart: weekStartOf(today),
   editingId: null, loaded: false,
   me: null, session: null,
 };
 const canEdit = () => state.me && ['approved','admin'].includes(state.me.status);
+
+/* ───────── 통계 설정 (기준점수·지방 가중치) ───────── */
+let statBase = Number(localStorage.getItem('statBase')) || 14;
+let statRemoteW = localStorage.getItem('statRemoteW')!==null && !isNaN(Number(localStorage.getItem('statRemoteW')))
+  ? Number(localStorage.getItem('statRemoteW')) : 0.5;
+function lawyerMonthStats(l, prefix){
+  const mine = state.events.filter(e=>e.lawyer_id===l.id && e.date && e.date.startsWith(prefix));
+  let score = 0, remote = 0;
+  const cnt = {};
+  mine.forEach(e=>{
+    cnt[e.type_id] = (cnt[e.type_id]||0)+1;
+    const t = state.types.find(x=>x.id===e.type_id);
+    score += Number(t?.weight ?? 1);
+    if(e.is_remote_court) remote++;
+  });
+  score += remote * statRemoteW;
+  const ratio = statBase>0 ? (score/statBase*100) : 0;
+  return { cnt, remote, total: mine.length, score, ratio };
+}
+const fmtScore = s => s%1===0 ? s : s.toFixed(1);
+const ratioCls = r => r>=150 ? 'hi' : (r>0 && r<70 ? 'lo' : '');
 
 /* ───────── 공휴일 (Nager.Date 무료 API) ───────── */
 const holidays = {};
@@ -763,10 +793,27 @@ function renderWeek(){
   const todayStr = ymd(today);
   const dayNames = ['일','월','화','수','목','금','토'];
 
+  // 통계 기준: 이 주가 속한 달
+  const statPrefix = `${ws.getFullYear()}-${String(ws.getMonth()+1).padStart(2,'0')}-`;
+
   // 헤더
   const thead = document.createElement('thead');
   const hr = document.createElement('tr');
   hr.innerHTML = '<th class="wk-lawyer">변호사</th>';
+  state.types.forEach(t=>{
+    const th = document.createElement('th');
+    th.className = 'wk-stat';
+    th.title = `${t.name} (가중치 ${t.weight ?? 1})`;
+    th.textContent = t.symbol || t.name.slice(0,1);
+    hr.appendChild(th);
+  });
+  [['★','서울 외 지방 출석'],['계','월 일정 건수'],['점수','월 점수'],['비율','점수 ÷ 기준점수']].forEach(([txt,tip])=>{
+    const th = document.createElement('th');
+    th.className = 'wk-stat';
+    th.title = tip;
+    th.textContent = txt;
+    hr.appendChild(th);
+  });
   days.forEach((d,i)=>{
     const ds = ymd(d);
     const holi = holidays[ds];
@@ -794,6 +841,27 @@ function renderWeek(){
       + (l.staff?`<div class="sf">${esc(l.staff)}</div>`:'')
       + (l.dept?`<div class="dp">${esc(l.dept)}</div>`:'');
     tr.appendChild(tdL);
+    // 월 통계 셀 (엑셀 좌측 블록)
+    const st = lawyerMonthStats(l, statPrefix);
+    state.types.forEach(t=>{
+      const td = document.createElement('td');
+      td.className = 'wk-stat';
+      td.textContent = st.cnt[t.id] || '';
+      tr.appendChild(td);
+    });
+    const tdR = document.createElement('td');
+    tdR.className = 'wk-stat'; tdR.textContent = st.remote || '';
+    tr.appendChild(tdR);
+    const tdC = document.createElement('td');
+    tdC.className = 'wk-stat'; tdC.textContent = st.total || '';
+    tr.appendChild(tdC);
+    const tdS = document.createElement('td');
+    tdS.className = 'wk-stat score'; tdS.textContent = st.total ? fmtScore(st.score) : '';
+    tr.appendChild(tdS);
+    const tdP = document.createElement('td');
+    tdP.className = 'wk-stat ratio ' + ratioCls(st.ratio);
+    tdP.textContent = st.total ? st.ratio.toFixed(1)+'%' : '';
+    tr.appendChild(tdP);
     days.forEach(d=>{
       const ds = ymd(d);
       const td = document.createElement('td');
@@ -805,7 +873,7 @@ function renderWeek(){
     tbody.appendChild(tr);
   });
   if(rows.length===0){
-    tbody.innerHTML = '<tr><td class="loading-banner" colspan="8">표시할 변호사가 없습니다.</td></tr>';
+    tbody.innerHTML = `<tr><td class="loading-banner" colspan="${1+state.types.length+4+7}">표시할 변호사가 없습니다.</td></tr>`;
   }
   tbl.appendChild(tbody);
 }
@@ -1016,46 +1084,43 @@ function statMonth(){
 function renderStats(){
   const {y,m} = statMonth();
   document.getElementById('statTitle').textContent = `업무량 통계 · ${y}년 ${m+1}월`;
-  const base = Number(document.getElementById('statBase').value) || 14;
-  const remoteW = Number(document.getElementById('statRemoteW').value) || 0;
   const prefix = `${y}-${String(m+1).padStart(2,'0')}-`;
-  const evts = state.events.filter(e=> e.date && e.date.startsWith(prefix));
 
   const tbl = document.getElementById('statTable');
-  // 헤더: 변호사 | 타입들 | ★지방 | 계 | 점수 | 비율
   let html = '<thead><tr><th>변호사</th>';
   state.types.forEach(t=>{ html += `<th>${esc((t.symbol||'')+' '+t.name)}</th>`; });
   html += '<th>★지방</th><th>계</th><th>점수</th><th>비율</th></tr></thead><tbody>';
 
   state.lawyers.forEach(l=>{
-    const mine = evts.filter(e=>e.lawyer_id===l.id);
-    let score = 0, remote = 0;
-    const cnt = {};
-    mine.forEach(e=>{
-      cnt[e.type_id] = (cnt[e.type_id]||0)+1;
-      const t = state.types.find(x=>x.id===e.type_id);
-      score += Number(t?.weight ?? 1);
-      if(e.is_remote_court) remote++;
-    });
-    score += remote * remoteW;
-    const ratio = base>0 ? (score/base*100) : 0;
-    const cls = ratio>=150 ? 'hi' : (ratio>0 && ratio<70 ? 'lo' : '');
+    const st = lawyerMonthStats(l, prefix);
     html += `<tr><td class="nm">${esc(l.name)}${l.staff?` <span class="sf">· ${esc(l.staff)}</span>`:''}</td>`;
-    state.types.forEach(t=>{ html += `<td>${cnt[t.id]||''}</td>`; });
-    html += `<td>${remote||''}</td><td>${mine.length||''}</td>`;
-    html += `<td class="score">${score%1===0?score:score.toFixed(1)}</td>`;
-    html += `<td class="ratio ${cls}">${ratio.toFixed(1)}%</td></tr>`;
+    state.types.forEach(t=>{ html += `<td>${st.cnt[t.id]||''}</td>`; });
+    html += `<td>${st.remote||''}</td><td>${st.total||''}</td>`;
+    html += `<td class="score">${st.total?fmtScore(st.score):''}</td>`;
+    html += `<td class="ratio ${ratioCls(st.ratio)}">${st.total?st.ratio.toFixed(1)+'%':''}</td></tr>`;
   });
   html += '</tbody>';
   tbl.innerHTML = html;
 }
 document.getElementById('statBtn').onclick = ()=>{
   if(!state.loaded) return;
+  document.getElementById('statBase').value = statBase;
+  document.getElementById('statRemoteW').value = statRemoteW;
   renderStats();
   document.getElementById('statOverlay').classList.add('open');
 };
-document.getElementById('statBase').oninput = renderStats;
-document.getElementById('statRemoteW').oninput = renderStats;
+document.getElementById('statBase').oninput = e=>{
+  const v = Number(e.target.value);
+  statBase = (!isNaN(v) && v>0) ? v : 14;
+  localStorage.setItem('statBase', statBase);
+  renderStats(); renderCalendar();
+};
+document.getElementById('statRemoteW').oninput = e=>{
+  const v = Number(e.target.value);
+  statRemoteW = !isNaN(v) ? v : 0.5;
+  localStorage.setItem('statRemoteW', statRemoteW);
+  renderStats(); renderCalendar();
+};
 
 /* ───────── 공통 ───────── */
 function closeOverlay(id){ document.getElementById(id).classList.remove('open'); }
