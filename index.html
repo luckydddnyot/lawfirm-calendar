@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>일정공유 캘린더</title>
+<title>법무법인 이현 일정공유 캘린더</title>
 <style>
   :root{
     --paper:#F7F6F2;
@@ -275,6 +275,11 @@
   }
   .mng-item .del{color:#A09A8C;font-size:15px;flex-shrink:0}
   .mng-item .del:hover{color:#B5432A}
+  .mng-item .consult-toggle{
+    display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-soft);
+    flex-shrink:0;cursor:pointer;user-select:none;
+  }
+  .mng-item .consult-toggle input{width:14px;height:14px;accent-color:#22713B;cursor:pointer}
   .mng-item .meta{flex:1;min-width:0;display:flex;flex-direction:column}
   .mng-item .meta .em{font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis}
   .mng-item .st{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;flex-shrink:0}
@@ -519,6 +524,7 @@
       </div>
       <div id="findResult" class="mng-list"></div>
       <div class="stat-note" id="findNote">
+        · <b>상담 가능으로 설정된 변호사만</b> 표시됩니다. ([관리] &gt; 변호사의 "상담" 체크로 설정)<br>
         · 빈 시간대를 클릭하면 해당 변호사·시간으로 바로 일정을 등록할 수 있습니다.<br>
         · 결과는 <b>캘린더에 등록된 일정 기준</b>입니다. 등록되지 않은 개인 사정(반차, 휴가, 이동시간 등)은 반영되지 않으니, 일정을 빠짐없이 입력할수록 정확해집니다.<br>
         · <b>★ 지방 출석 일정의 직전·직후 시간</b>은 이동시간이 계산에 포함되지 않으므로, 해당 변호사에게 확인 후 잡아주세요.
@@ -1026,12 +1032,20 @@ function renderManage(){
       <input type="text" class="i-name" value="${esc(l.name)}" aria-label="이름" placeholder="이름">
       <input type="text" class="i-staff" value="${esc(l.staff||'')}" aria-label="송무직원" placeholder="송무직원">
       <input type="text" class="i-dept" value="${esc(l.dept||'')}" aria-label="소속" placeholder="소속">
+      <label class="consult-toggle" title="상담가능시간 찾기에 포함 여부">
+        <input type="checkbox" ${l.accepts_consult!==false?'checked':''}>상담
+      </label>
       <button class="del" title="삭제">✕</button>`;
-    const [color, name, staff, dept] = row.querySelectorAll('input');
+    const [color, name, staff, dept, consult] = row.querySelectorAll('input');
     bindField(color,'lawyer',l.id,'color', v=>{ l.color=v; renderFilters(); renderCalendar(); });
     bindField(name,'lawyer',l.id,'name', v=>{ l.name=v; renderFilters(); renderCalendar(); });
     bindField(staff,'lawyer',l.id,'staff', v=>{ l.staff=v; renderCalendar(); });
     bindField(dept,'lawyer',l.id,'dept', v=>{ l.dept=v; renderCalendar(); });
+    consult.onchange = async ()=>{
+      const {error} = await db.from('lawyer').update({accepts_consult: consult.checked}).eq('id', l.id);
+      if(error){ alert('저장 실패: '+error.message); consult.checked = !consult.checked; }
+      else l.accepts_consult = consult.checked;
+    };
     row.querySelector('.del').onclick = async ()=>{
       const used = state.events.some(e=>e.lawyer_id===l.id);
       if(!confirm(used ? `${l.name}의 일정이 함께 삭제됩니다. 진행할까요?` : `${l.name}을(를) 삭제할까요?`)) return;
@@ -1218,7 +1232,10 @@ function renderFind(){
   const box = document.getElementById('findResult');
   box.innerHTML = '';
   if(!dateStr || to<=from){ box.innerHTML = '<div class="stat-note">날짜와 시간대를 확인해주세요.</div>'; return; }
-  const rows = state.lawyers.filter(l=> state.filterLawyers.size===0 || state.filterLawyers.has(l.id));
+  const rows = state.lawyers.filter(l=>
+    l.accepts_consult !== false &&
+    (state.filterLawyers.size===0 || state.filterLawyers.has(l.id))
+  );
   rows.forEach(l=>{
     const { slots, busyCount } = freeSlots(l.id, dateStr, from, to, minMin);
     const row = document.createElement('div');
@@ -1255,7 +1272,7 @@ function renderFind(){
     }
     box.appendChild(row);
   });
-  if(rows.length===0) box.innerHTML = '<div class="stat-note">표시할 변호사가 없습니다.</div>';
+  if(rows.length===0) box.innerHTML = '<div class="stat-note">표시할 상담 가능 변호사가 없습니다. [관리]에서 변호사별 "상담" 체크를 확인해주세요.</div>';
 }
 document.getElementById('findBtn').onclick = ()=>{
   if(!state.loaded) return;
