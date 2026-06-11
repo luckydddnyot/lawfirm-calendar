@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>일정공유 캘린더 — 법무법인 프로토타입</title>
+<style>
+  :root{
+    --paper:#F7F6F2;
+    --ink:#22272E;
+    --ink-soft:#5A6472;
+    --line:#E3E0D8;
+    --navy:#1C2B3A;
+    --navy-soft:#2E4154;
+    --accent:#B5432A;
+    --cell:#FFFFFF;
+    --today:#FDF6EC;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:"Pretendard Variable",Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5;
+  }
+  button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,select,textarea{font:inherit;color:inherit}
+
+  /* ── Header ── */
+  header{
+    background:var(--navy);color:#F4F1E8;
+    padding:14px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand h1{font-size:17px;font-weight:700;letter-spacing:-.01em}
+  .brand .sub{font-size:12px;color:#A9B4BF}
+  .month-nav{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .month-nav .label{font-size:16px;font-weight:600;min-width:110px;text-align:center;font-variant-numeric:tabular-nums}
+  .nav-btn{
+    width:30px;height:30px;border-radius:8px;background:var(--navy-soft);
+    color:#E8E4D8;font-size:14px;display:flex;align-items:center;justify-content:center;
+  }
+  .nav-btn:hover{background:#3A5066}
+  .today-btn{
+    padding:5px 12px;border-radius:8px;background:transparent;border:1px solid #4A5E72;
+    color:#D8DDE2;font-size:13px;
+  }
+  .today-btn:hover{border-color:#8FA0B0;color:#fff}
+  .manage-btn{
+    padding:6px 14px;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;
+  }
+  .manage-btn:hover{filter:brightness(1.08)}
+
+  /* ── Filters ── */
+  .filters{
+    padding:12px 22px;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;
+    border-bottom:1px solid var(--line);background:#FCFBF8;
+  }
+  .filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .filter-group .fg-label{
+    font-size:11px;font-weight:700;color:var(--ink-soft);letter-spacing:.06em;
+    text-transform:uppercase;margin-right:2px;
+  }
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+    border:1px solid var(--line);background:#fff;font-size:13px;color:var(--ink-soft);
+    transition:all .12s ease;user-select:none;
+  }
+  .chip .dot{width:9px;height:9px;border-radius:50%;background:var(--c,#999);opacity:.35}
+  .chip.on{color:var(--ink);border-color:var(--c,var(--navy));box-shadow:inset 0 0 0 1px var(--c,var(--navy))}
+  .chip.on .dot{opacity:1}
+  .chip.type-chip.on{border-color:var(--navy);box-shadow:inset 0 0 0 1px var(--navy)}
+
+  /* ── Calendar ── */
+  .cal-wrap{padding:16px 22px 28px;max-width:1280px;margin:0 auto}
+  .weekday-row{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}
+  .weekday{
+    text-align:center;font-size:12px;font-weight:700;color:var(--ink-soft);padding:4px 0;letter-spacing:.04em;
+  }
+  .weekday.sun{color:#C0492F}
+  .weekday.sat{color:#3D6A9E}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cell{
+    background:var(--cell);border:1px solid var(--line);border-radius:var(--radius);
+    min-height:118px;padding:6px;display:flex;flex-direction:column;gap:3px;
+    cursor:pointer;transition:border-color .12s ease;
+  }
+  .cell:hover{border-color:#BFB9A8}
+  .cell.dim{background:transparent;border-style:dashed;opacity:.55}
+  .cell.today{background:var(--today);border-color:#D9A765}
+  .cell .date{
+    font-size:12px;font-weight:600;color:var(--ink-soft);
+    display:flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums;
+  }
+  .cell.today .date::after{
+    content:"오늘";font-size:10px;font-weight:700;color:#fff;background:var(--accent);
+    padding:1px 6px;border-radius:999px;
+  }
+  .cell .date.sun{color:#C0492F}
+  .cell .date.sat{color:#3D6A9E}
+  .evt{
+    display:flex;align-items:center;gap:5px;padding:2.5px 6px;border-radius:6px;
+    font-size:12px;line-height:1.3;background:color-mix(in srgb,var(--c) 12%,#fff);
+    border-left:3px solid var(--c);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  }
+  .evt:hover{background:color-mix(in srgb,var(--c) 22%,#fff)}
+  .evt .t{font-weight:600;flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--ink-soft);font-size:11px}
+  .evt .title{overflow:hidden;text-overflow:ellipsis}
+  .evt .who{font-weight:700;color:var(--c);flex-shrink:0}
+  .more{font-size:11px;color:var(--ink-soft);padding-left:6px}
+
+  /* ── Modal ── */
+  .overlay{
+    position:fixed;inset:0;background:rgba(20,25,32,.45);display:none;
+    align-items:flex-start;justify-content:center;padding:6vh 16px;z-index:50;overflow:auto;
+  }
+  .overlay.open{display:flex}
+  .modal{
+    background:#fff;border-radius:14px;width:100%;max-width:460px;
+    box-shadow:0 18px 50px rgba(0,0,0,.22);overflow:hidden;
+  }
+  .modal-head{
+    padding:14px 18px;background:var(--navy);color:#F4F1E8;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .modal-head h2{font-size:15px;font-weight:700}
+  .modal-head .close{color:#A9B4BF;font-size:18px;line-height:1}
+  .modal-head .close:hover{color:#fff}
+  .modal-body{padding:18px;display:flex;flex-direction:column;gap:12px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:12px;font-weight:600;color:var(--ink-soft)}
+  .field input,.field select,.field textarea{
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#FCFBF8;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:2px solid var(--navy-soft);outline-offset:-1px;background:#fff;
+  }
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .modal-foot{
+    padding:14px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;
+  }
+  .btn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600}
+  .btn.primary{background:var(--navy);color:#fff}
+  .btn.primary:hover{background:var(--navy-soft)}
+  .btn.ghost{border:1px solid var(--line);color:var(--ink-soft)}
+  .btn.ghost:hover{border-color:#B9B2A0;color:var(--ink)}
+  .btn.danger{color:#B5432A;margin-right:auto}
+  .btn.danger:hover{background:#FBEDE9}
+
+  /* ── Manage modal ── */
+  .mng-section{display:flex;flex-direction:column;gap:8px}
+  .mng-section h3{font-size:13px;font-weight:700;color:var(--ink-soft)}
+  .mng-list{display:flex;flex-direction:column;gap:6px}
+  .mng-item{
+    display:flex;align-items:center;gap:8px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:8px;background:#FCFBF8;
+  }
+  .mng-item input[type="text"]{border:none;background:transparent;flex:1;min-width:0}
+  .mng-item input[type="text"]:focus{outline:none}
+  .mng-item input[type="color"]{
+    width:26px;height:26px;border:none;background:none;padding:0;cursor:pointer;border-radius:6px;
+  }
+  .mng-item .del{color:#A09A8C;font-size:15px}
+  .mng-item .del:hover{color:#B5432A}
+  .mng-add{
+    align-self:flex-start;font-size:13px;font-weight:600;color:var(--navy);
+    padding:4px 2px;border-bottom:1px dashed transparent;
+  }
+  .mng-add:hover{border-bottom-color:var(--navy)}
+  .mng-divider{height:1px;background:var(--line);margin:4px 0}
+
+  @media (max-width:760px){
+    .cell{min-height:84px}
+    .evt .t{display:none}
+    .cal-wrap{padding:12px 10px 24px}
+    .filters{padding:10px 12px}
+    header{padding:12px 14px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>일정공유 캘린더</h1>
+    <span class="sub">법무법인 프로토타입</span>
+  </div>
+  <div class="month-nav">
+    <button class="nav-btn" id="prevBtn" aria-label="이전 달">‹</button>
+    <span class="label" id="monthLabel"></span>
+    <button class="nav-btn" id="nextBtn" aria-label="다음 달">›</button>
+    <button class="today-btn" id="todayBtn">오늘</button>
+  </div>
+  <button class="manage-btn" id="manageBtn">+ 변호사·일정타입 관리</button>
+</header>
+
+<div class="filters">
+  <div class="filter-group" id="lawyerFilters"><span class="fg-label">변호사</span></div>
+  <div class="filter-group" id="typeFilters"><span class="fg-label">일정 타입</span></div>
+</div>
+
+<div class="cal-wrap">
+  <div class="weekday-row">
+    <div class="weekday sun">일</div><div class="weekday">월</div><div class="weekday">화</div>
+    <div class="weekday">수</div><div class="weekday">목</div><div class="weekday">금</div>
+    <div class="weekday sat">토</div>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<!-- 일정 등록/수정 모달 -->
+<div class="overlay" id="evtOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="evtModalTitle">일정 등록</h2>
+      <button class="close" data-close="evtOverlay">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="fTitle">제목</label>
+        <input id="fTitle" type="text" placeholder="예: ○○○ 의뢰인 상담">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="fLawyer">변호사</label>
+          <select id="fLawyer"></select>
+        </div>
+        <div class="field">
+          <label for="fType">일정 타입</label>
+          <select id="fType"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="fDate">날짜</label>
+        <input id="fDate" type="date">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="fStart">시작</label>
+          <input id="fStart" type="time" value="10:00">
+        </div>
+        <div class="field">
+          <label for="fEnd">종료</label>
+          <input id="fEnd" type="time" value="11:00">
+        </div>
+      </div>
+      <div class="field">
+        <label for="fLoc">장소</label>
+        <input id="fLoc" type="text" placeholder="예: 본사 3층 상담실 / 강남경찰서">
+      </div>
+      <div class="field">
+        <label for="fMemo">메모</label>
+        <textarea id="fMemo" rows="2" placeholder="비고"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="evtDeleteBtn" style="display:none">삭제</button>
+      <button class="btn ghost" data-close="evtOverlay">취소</button>
+      <button class="btn primary" id="evtSaveBtn">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 관리 모달 -->
+<div class="overlay" id="mngOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>변호사 · 일정타입 관리</h2>
+      <button class="close" data-close="mngOverlay">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="mng-section">
+        <h3>변호사</h3>
+        <div class="mng-list" id="mngLawyers"></div>
+        <button class="mng-add" id="addLawyerBtn">+ 변호사 추가</button>
+      </div>
+      <div class="mng-divider"></div>
+      <div class="mng-section">
+        <h3>일정 타입</h3>
+        <div class="mng-list" id="mngTypes"></div>
+        <button class="mng-add" id="addTypeBtn">+ 타입 추가</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn primary" data-close="mngOverlay">완료</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ───────── 상태 ───────── */
+const today = new Date();
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const thisMonthDay = n => {
+  const d = new Date(today.getFullYear(), today.getMonth(), n);
+  return ymd(d);
+};
+
+const state = {
+  lawyers: [
+    { id:'L1', name:'김변호사', color:'#2563EB' },
+    { id:'L2', name:'이변호사', color:'#D97706' },
+    { id:'L3', name:'박변호사', color:'#059669' },
+  ],
+  types: [
+    { id:'T1', name:'상담' },
+    { id:'T2', name:'외근' },
+    { id:'T3', name:'재판' },
+    { id:'T4', name:'경찰조사 참관' },
+  ],
+  events: [
+    { id:'E1', lawyerId:'L1', typeId:'T1', title:'신규 의뢰인 상담', date:thisMonthDay(3),  start:'10:00', end:'11:00', loc:'3층 상담실', memo:'' },
+    { id:'E2', lawyerId:'L2', typeId:'T2', title:'등기소 외근',     date:thisMonthDay(3),  start:'14:00', end:'16:00', loc:'중앙등기소', memo:'' },
+    { id:'E3', lawyerId:'L3', typeId:'T4', title:'피의자 조사 참관', date:thisMonthDay(5),  start:'09:30', end:'12:00', loc:'강남경찰서', memo:'' },
+    { id:'E4', lawyerId:'L1', typeId:'T3', title:'민사 1심 변론기일', date:thisMonthDay(9),  start:'14:10', end:'15:00', loc:'서울중앙지법 358호', memo:'' },
+    { id:'E5', lawyerId:'L2', typeId:'T1', title:'기업 자문 미팅',   date:thisMonthDay(11), start:'11:00', end:'12:00', loc:'화상회의', memo:'' },
+    { id:'E6', lawyerId:'L3', typeId:'T3', title:'형사 공판기일',   date:thisMonthDay(16), start:'10:00', end:'11:30', loc:'서울중앙지법 417호', memo:'' },
+    { id:'E7', lawyerId:'L1', typeId:'T2', title:'현장 검증 동행',   date:thisMonthDay(16), start:'13:00', end:'17:00', loc:'성수동 현장', memo:'' },
+    { id:'E8', lawyerId:'L2', typeId:'T4', title:'참고인 조사 참관', date:thisMonthDay(23), start:'15:00', end:'17:00', loc:'서초경찰서', memo:'' },
+    { id:'E9', lawyerId:'L3', typeId:'T1', title:'상속 분쟁 상담',   date:thisMonthDay(25), start:'16:00', end:'17:00', loc:'3층 상담실', memo:'' },
+  ],
+  filterLawyers: new Set(),  // 비어 있으면 전체
+  filterTypes: new Set(),
+  view: { y: today.getFullYear(), m: today.getMonth() },  // m: 0-based
+  editingId: null,
+};
+let seq = 100;
+const uid = p => p + (seq++);
+
+/* ───────── 필터 칩 ───────── */
+function renderFilters(){
+  const lf = document.getElementById('lawyerFilters');
+  lf.querySelectorAll('.chip').forEach(e=>e.remove());
+  state.lawyers.forEach(l=>{
+    const on = state.filterLawyers.size===0 || state.filterLawyers.has(l.id);
+    const c = document.createElement('button');
+    c.className = 'chip' + (on?' on':'');
+    c.style.setProperty('--c', l.color);
+    c.innerHTML = `<span class="dot"></span>${esc(l.name)}`;
+    c.onclick = ()=>toggleFilter(state.filterLawyers, l.id, state.lawyers.length);
+    lf.appendChild(c);
+  });
+  const tf = document.getElementById('typeFilters');
+  tf.querySelectorAll('.chip').forEach(e=>e.remove());
+  state.types.forEach(t=>{
+    const on = state.filterTypes.size===0 || state.filterTypes.has(t.id);
+    const c = document.createElement('button');
+    c.className = 'chip type-chip' + (on?' on':'');
+    c.textContent = t.name;
+    c.onclick = ()=>toggleFilter(state.filterTypes, t.id, state.types.length);
+    tf.appendChild(c);
+  });
+}
+function toggleFilter(set, id, total){
+  if(set.size===0){
+    // 전체 표시 상태에서 하나 클릭 → 그것만 보기
+    set.add(id);
+  }else if(set.has(id)){
+    set.delete(id);
+  }else{
+    set.add(id);
+    if(set.size===total) set.clear(); // 전부 선택 = 전체 표시
+  }
+  renderAll();
+}
+
+/* ───────── 캘린더 ───────── */
+function renderCalendar(){
+  const {y,m} = state.view;
+  document.getElementById('monthLabel').textContent = `${y}년 ${m+1}월`;
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  const first = new Date(y,m,1);
+  const startOffset = first.getDay();
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  const todayStr = ymd(today);
+
+  const visible = state.events.filter(e=>{
+    const okL = state.filterLawyers.size===0 || state.filterLawyers.has(e.lawyerId);
+    const okT = state.filterTypes.size===0 || state.filterTypes.has(e.typeId);
+    return okL && okT;
+  });
+  const byDate = {};
+  visible.forEach(e=>{ (byDate[e.date] ||= []).push(e); });
+  Object.values(byDate).forEach(arr=>arr.sort((a,b)=>a.start.localeCompare(b.start)));
+
+  const totalCells = Math.ceil((startOffset+daysInMonth)/7)*7;
+  for(let i=0;i<totalCells;i++){
+    const dayNum = i - startOffset + 1;
+    const cell = document.createElement('div');
+    if(dayNum<1 || dayNum>daysInMonth){
+      cell.className = 'cell dim';
+      grid.appendChild(cell);
+      continue;
+    }
+    const dateStr = ymd(new Date(y,m,dayNum));
+    const dow = i%7;
+    cell.className = 'cell' + (dateStr===todayStr?' today':'');
+    const dateEl = document.createElement('div');
+    dateEl.className = 'date' + (dow===0?' sun':dow===6?' sat':'');
+    dateEl.textContent = dayNum;
+    cell.appendChild(dateEl);
+
+    const evts = byDate[dateStr] || [];
+    const MAX = 4;
+    evts.slice(0,MAX).forEach(e=>{
+      const l = state.lawyers.find(x=>x.id===e.lawyerId) || {name:'?',color:'#999'};
+      const t = state.types.find(x=>x.id===e.typeId) || {name:'?'};
+      const el = document.createElement('div');
+      el.className = 'evt';
+      el.style.setProperty('--c', l.color);
+      el.title = `${l.name} · ${t.name} · ${e.title} (${e.start}~${e.end}) ${e.loc||''}`;
+      el.innerHTML = `<span class="t">${e.start}</span><span class="who">${esc(shortName(l.name))}</span><span class="title">[${esc(t.name)}] ${esc(e.title)}</span>`;
+      el.onclick = ev=>{ ev.stopPropagation(); openEventModal(e.id); };
+      cell.appendChild(el);
+    });
+    if(evts.length>MAX){
+      const more = document.createElement('div');
+      more.className = 'more';
+      more.textContent = `+${evts.length-MAX}건 더보기`;
+      more.onclick = ev=>{ ev.stopPropagation(); alert(evts.map(e=>{
+        const l = state.lawyers.find(x=>x.id===e.lawyerId)||{name:'?'};
+        const t = state.types.find(x=>x.id===e.typeId)||{name:'?'};
+        return `${e.start} ${l.name} [${t.name}] ${e.title}`;
+      }).join('\n')); };
+      cell.appendChild(more);
+    }
+    cell.onclick = ()=>openEventModal(null, dateStr);
+    grid.appendChild(cell);
+  }
+}
+function shortName(n){ return n.length>4 ? n.slice(0,3)+'…' : n; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ───────── 일정 모달 ───────── */
+function fillSelects(){
+  const sl = document.getElementById('fLawyer');
+  sl.innerHTML = state.lawyers.map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  const st = document.getElementById('fType');
+  st.innerHTML = state.types.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+}
+function openEventModal(id, dateStr){
+  fillSelects();
+  state.editingId = id;
+  const isEdit = !!id;
+  document.getElementById('evtModalTitle').textContent = isEdit?'일정 수정':'일정 등록';
+  document.getElementById('evtDeleteBtn').style.display = isEdit?'':'none';
+  if(isEdit){
+    const e = state.events.find(x=>x.id===id);
+    fTitle.value=e.title; fLawyer.value=e.lawyerId; fType.value=e.typeId;
+    fDate.value=e.date; fStart.value=e.start; fEnd.value=e.end;
+    fLoc.value=e.loc||''; fMemo.value=e.memo||'';
+  }else{
+    fTitle.value=''; fDate.value = dateStr || ymd(today);
+    fStart.value='10:00'; fEnd.value='11:00'; fLoc.value=''; fMemo.value='';
+  }
+  document.getElementById('evtOverlay').classList.add('open');
+  setTimeout(()=>fTitle.focus(),50);
+}
+document.getElementById('evtSaveBtn').onclick = ()=>{
+  if(!fTitle.value.trim()){ fTitle.focus(); return; }
+  if(!fDate.value){ fDate.focus(); return; }
+  const data = {
+    title:fTitle.value.trim(), lawyerId:fLawyer.value, typeId:fType.value,
+    date:fDate.value, start:fStart.value||'00:00', end:fEnd.value||'',
+    loc:fLoc.value.trim(), memo:fMemo.value.trim(),
+  };
+  if(state.editingId){
+    Object.assign(state.events.find(x=>x.id===state.editingId), data);
+  }else{
+    state.events.push({ id:uid('E'), ...data });
+  }
+  closeOverlay('evtOverlay');
+  renderAll();
+};
+document.getElementById('evtDeleteBtn').onclick = ()=>{
+  if(!confirm('이 일정을 삭제할까요?')) return;
+  state.events = state.events.filter(x=>x.id!==state.editingId);
+  closeOverlay('evtOverlay');
+  renderAll();
+};
+
+/* ───────── 관리 모달 ───────── */
+function renderManage(){
+  const ml = document.getElementById('mngLawyers');
+  ml.innerHTML = '';
+  state.lawyers.forEach(l=>{
+    const row = document.createElement('div');
+    row.className='mng-item';
+    row.innerHTML = `
+      <input type="color" value="${l.color}" aria-label="색상">
+      <input type="text" value="${esc(l.name)}" aria-label="이름">
+      <button class="del" title="삭제">✕</button>`;
+    const [color, name] = row.querySelectorAll('input');
+    color.oninput = ()=>{ l.color = color.value; renderFilters(); renderCalendar(); };
+    name.oninput = ()=>{ l.name = name.value; renderFilters(); renderCalendar(); };
+    row.querySelector('.del').onclick = ()=>{
+      const used = state.events.some(e=>e.lawyerId===l.id);
+      if(used && !confirm(`${l.name}의 일정이 있습니다. 함께 삭제할까요?`)) return;
+      state.events = state.events.filter(e=>e.lawyerId!==l.id);
+      state.lawyers = state.lawyers.filter(x=>x.id!==l.id);
+      state.filterLawyers.delete(l.id);
+      renderManage(); renderAll();
+    };
+    ml.appendChild(row);
+  });
+  const mt = document.getElementById('mngTypes');
+  mt.innerHTML = '';
+  state.types.forEach(t=>{
+    const row = document.createElement('div');
+    row.className='mng-item';
+    row.innerHTML = `
+      <input type="text" value="${esc(t.name)}" aria-label="타입명">
+      <button class="del" title="삭제">✕</button>`;
+    const name = row.querySelector('input');
+    name.oninput = ()=>{ t.name = name.value; renderFilters(); renderCalendar(); };
+    row.querySelector('.del').onclick = ()=>{
+      const used = state.events.some(e=>e.typeId===t.id);
+      if(used && !confirm(`'${t.name}' 타입의 일정이 있습니다. 함께 삭제할까요?`)) return;
+      state.events = state.events.filter(e=>e.typeId!==t.id);
+      state.types = state.types.filter(x=>x.id!==t.id);
+      state.filterTypes.delete(t.id);
+      renderManage(); renderAll();
+    };
+    mt.appendChild(row);
+  });
+}
+const PALETTE = ['#2563EB','#D97706','#059669','#DB2777','#7C3AED','#0E7490','#65A30D','#DC2626'];
+document.getElementById('addLawyerBtn').onclick = ()=>{
+  state.lawyers.push({ id:uid('L'), name:'새 변호사', color:PALETTE[state.lawyers.length % PALETTE.length] });
+  renderManage(); renderFilters();
+};
+document.getElementById('addTypeBtn').onclick = ()=>{
+  state.types.push({ id:uid('T'), name:'새 타입' });
+  renderManage(); renderFilters();
+};
+document.getElementById('manageBtn').onclick = ()=>{
+  renderManage();
+  document.getElementById('mngOverlay').classList.add('open');
+};
+
+/* ───────── 공통 ───────── */
+function closeOverlay(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(b=>{
+  b.onclick = ()=>{ closeOverlay(b.dataset.close); renderAll(); };
+});
+document.querySelectorAll('.overlay').forEach(o=>{
+  o.addEventListener('click', e=>{ if(e.target===o){ o.classList.remove('open'); renderAll(); } });
+});
+document.getElementById('prevBtn').onclick = ()=>{ shiftMonth(-1); };
+document.getElementById('nextBtn').onclick = ()=>{ shiftMonth(1); };
+document.getElementById('todayBtn').onclick = ()=>{
+  state.view = { y:today.getFullYear(), m:today.getMonth() }; renderCalendar();
+};
+function shiftMonth(d){
+  let {y,m} = state.view; m+=d;
+  if(m<0){m=11;y--;} if(m>11){m=0;y++;}
+  state.view={y,m}; renderCalendar();
+}
+function renderAll(){ renderFilters(); renderCalendar(); }
+renderAll();
+</script>
+</body>
+</html>
