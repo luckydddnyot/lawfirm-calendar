@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>법무법인 이현 일정공유 캘린더</title>
+<title>법무법인 일정공유 캘린더</title>
 <style>
   :root{
     --paper:#F7F6F2;
@@ -287,6 +287,13 @@
   .st.approved{background:#E6F4EA;color:#22713B}
   .st.admin{background:#E8EDF6;color:#2B4A77}
   .mng-item .act{font-size:12px;font-weight:600;color:var(--navy);text-decoration:underline;flex-shrink:0}
+  .mng-item select{
+    font-size:12px;border:1px solid var(--line);border-radius:6px;padding:2px 4px;
+    background:#fff;max-width:104px;flex-shrink:0;color:var(--ink-soft);
+  }
+  .chip.mine{border-color:var(--navy);color:var(--navy);font-weight:700}
+  .chip.mine.on{background:var(--navy);color:#fff;box-shadow:none}
+  .evt-meta{font-size:11px;color:var(--ink-soft);text-align:right}
   .mng-add{
     align-self:flex-start;font-size:13px;font-weight:600;color:var(--navy);
     padding:4px 2px;border-bottom:1px dashed transparent;
@@ -467,6 +474,7 @@
         <label for="fMemo">메모</label>
         <textarea id="fMemo" rows="2" placeholder="비고"></textarea>
       </div>
+      <div class="evt-meta" id="evtMeta" hidden></div>
     </div>
     <div class="modal-foot">
       <button class="btn danger" id="evtDeleteBtn" style="display:none">삭제</button>
@@ -712,6 +720,19 @@ window.addEventListener('focus', ()=> state.loaded && loadAll());
 function renderFilters(){
   const lf = document.getElementById('lawyerFilters');
   lf.querySelectorAll('.chip').forEach(e=>e.remove());
+  // 내 일정 (계정에 변호사가 연결된 경우)
+  if(state.me?.lawyer_id && state.lawyers.some(l=>l.id===state.me.lawyer_id)){
+    const active = state.filterLawyers.size===1 && state.filterLawyers.has(state.me.lawyer_id);
+    const mine = document.createElement('button');
+    mine.className = 'chip mine' + (active?' on':'');
+    mine.textContent = '내 일정';
+    mine.onclick = ()=>{
+      state.filterLawyers.clear();
+      if(!active) state.filterLawyers.add(state.me.lawyer_id);
+      renderAll();
+    };
+    lf.appendChild(mine);
+  }
   state.lawyers.forEach(l=>{
     const on = state.filterLawyers.size===0 || state.filterLawyers.has(l.id);
     const c = document.createElement('button');
@@ -964,6 +985,7 @@ function openEventModal(id, dateStr, lawyerId, presetStart, presetEnd){
   document.getElementById('evtSaveBtn').hidden = ro;
   document.getElementById('evtModalTitle').textContent = ro ? '일정 보기' : (isEdit?'일정 수정':'일정 등록');
   document.getElementById('evtDeleteBtn').style.display = (isEdit && !ro)?'':'none';
+  const meta = document.getElementById('evtMeta');
   if(isEdit){
     const e = state.events.find(x=>x.id===id);
     if(!e) return;
@@ -971,7 +993,13 @@ function openEventModal(id, dateStr, lawyerId, presetStart, presetEnd){
     fDate.value=e.date; fStart.value=hm(e.start_time); fEnd.value=hm(e.end_time);
     fLoc.value=e.loc||''; fMemo.value=e.memo||'';
     fRemote.checked=!!e.is_remote_court; fVideo.checked=!!e.is_video;
+    const mt = [];
+    if(e.created_by) mt.push('등록: '+e.created_by);
+    if(e.updated_by && e.updated_by!==e.created_by) mt.push('최종수정: '+e.updated_by);
+    meta.textContent = mt.join(' · ');
+    meta.hidden = mt.length===0;
   }else{
+    meta.hidden = true;
     fTitle.value=''; fDate.value = dateStr || ymd(today);
     if(lawyerId) fLawyer.value = lawyerId;
     fStart.value=presetStart||'10:00'; fEnd.value=presetEnd||'11:00';
@@ -986,18 +1014,19 @@ document.getElementById('evtSaveBtn').onclick = async ()=>{
   if(!fDate.value){ fDate.focus(); return; }
   const btn = document.getElementById('evtSaveBtn');
   btn.disabled = true; btn.textContent = '저장 중…';
+  const who = state.me?.name || state.me?.email || '';
   const data = {
     title:fTitle.value.trim(), lawyer_id:fLawyer.value, type_id:fType.value,
     date:fDate.value, start_time:fStart.value||'00:00', end_time:fEnd.value||null,
     loc:fLoc.value.trim(), memo:fMemo.value.trim(),
     is_remote_court:fRemote.checked, is_video:fVideo.checked,
-    updated_at:new Date().toISOString(),
+    updated_at:new Date().toISOString(), updated_by: who,
   };
   let error;
   if(state.editingId){
     ({error} = await db.from('event').update(data).eq('id', state.editingId));
   }else{
-    ({error} = await db.from('event').insert(data));
+    ({error} = await db.from('event').insert({ ...data, created_by: who }));
   }
   btn.disabled = false; btn.textContent = '저장';
   if(error){ alert('저장 실패: ' + error.message); return; }
@@ -1090,6 +1119,7 @@ async function renderMembers(){
   if(error){ mm.innerHTML = '<div class="mng-item">목록 조회 실패</div>'; return; }
   mm.innerHTML = '';
   const stLabel = { pending:'대기', viewer:'읽기전용', approved:'편집가능', admin:'관리자' };
+  const ROLES = ['변호사','송무직원','상담직원','기타'];
   members.forEach(mb=>{
     const row = document.createElement('div');
     row.className='mng-item';
@@ -1098,8 +1128,44 @@ async function renderMembers(){
       <div class="meta">
         <span>${esc(mb.name || '-')}</span>
         <span class="em">${esc(mb.email)}</span>
-      </div>
-      <span class="st ${mb.status==='viewer'?'pending':mb.status}">${stLabel[mb.status]}</span>`;
+      </div>`;
+    // 직무
+    const roleSel = document.createElement('select');
+    roleSel.title = '직무';
+    ROLES.forEach(r=>{
+      const o = document.createElement('option');
+      o.value = r; o.textContent = r;
+      roleSel.appendChild(o);
+    });
+    roleSel.value = ROLES.includes(mb.role) ? mb.role : '기타';
+    roleSel.onchange = async ()=>{
+      const {error} = await db.from('members').update({role:roleSel.value}).eq('id', mb.id);
+      if(error) alert('실패: '+error.message);
+    };
+    row.appendChild(roleSel);
+    // 변호사 연결
+    const lwSel = document.createElement('select');
+    lwSel.title = '연결 변호사 (본인 또는 담당)';
+    const o0 = document.createElement('option');
+    o0.value = ''; o0.textContent = '연결 없음';
+    lwSel.appendChild(o0);
+    state.lawyers.forEach(l=>{
+      const o = document.createElement('option');
+      o.value = l.id; o.textContent = l.name;
+      lwSel.appendChild(o);
+    });
+    lwSel.value = mb.lawyer_id || '';
+    lwSel.onchange = async ()=>{
+      const {error} = await db.from('members').update({lawyer_id: lwSel.value || null}).eq('id', mb.id);
+      if(error) alert('실패: '+error.message);
+      else if(isSelf){ state.me.lawyer_id = lwSel.value || null; renderFilters(); }
+    };
+    row.appendChild(lwSel);
+    // 상태 배지
+    const st = document.createElement('span');
+    st.className = `st ${mb.status==='viewer'?'pending':mb.status}`;
+    st.textContent = stLabel[mb.status];
+    row.appendChild(st);
     const setStatus = (status) => async ()=>{
       const {error} = await db.from('members').update({status}).eq('id', mb.id);
       if(error) alert('실패: '+error.message); else renderMembers();
