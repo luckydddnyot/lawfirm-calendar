@@ -163,6 +163,15 @@
   .evt .vid{color:#C0492F;font-size:10px;font-weight:700;flex-shrink:0}
   .more{font-size:11px;color:var(--ink-soft);padding-left:6px}
   .loading-banner{text-align:center;color:var(--ink-soft);padding:40px 0;font-size:13px}
+  .app-footer{
+    text-align:center;font-size:12px;color:var(--ink-soft);
+    padding:24px 0 8px;
+  }
+  .app-footer a{
+    color:var(--navy);font-weight:600;text-decoration:none;
+    border-bottom:1px dashed var(--navy);
+  }
+  .app-footer a:hover{border-bottom-style:solid}
 
   /* ── 주간 리소스 뷰 ── */
   .wk-scroll{overflow-x:auto}
@@ -423,6 +432,10 @@
   <div id="weekView" hidden>
     <div class="wk-scroll"><table class="wk-table" id="wkTable"></table></div>
   </div>
+  <footer class="app-footer">
+    문의사항이나 개선 아이디어가 있으신가요?
+    <a href="mailto:chambong87@gmail.com?subject=%5B%EC%9D%BC%EC%A0%95%EA%B3%B5%EC%9C%A0%20%EC%BA%98%EB%A6%B0%EB%8D%94%5D%20%EB%AC%B8%EC%9D%98&body=%EB%AC%B8%EC%9D%98%20%EB%82%B4%EC%9A%A9%3A%0A%0A%ED%99%94%EB%A9%B4%EC%BA%A1%EC%B2%98%EA%B0%80%20%EC%9E%88%EC%9C%BC%EB%A9%B4%20%EC%B2%A8%EB%B6%80%ED%95%B4%EC%A3%BC%EC%84%B8%EC%9A%94.">✉ 개발자에게 연락하기</a>
+  </footer>
 </div>
 </div><!-- /appRoot -->
 
