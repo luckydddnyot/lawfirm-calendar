@@ -397,6 +397,7 @@ const state = {
   me: null,            // members 테이블의 내 행
   session: null,
 };
+const canEdit = () => state.me && ['approved','admin'].includes(state.me.status);
 
 /* ───────── 화면 전환 ───────── */
 function showScreen(name){
@@ -430,8 +431,9 @@ async function resolveMember(){
     showScreen('pending');
     return;
   }
-  // approved / admin
-  document.getElementById('userName').textContent = row.name || email;
+  // approved / admin / viewer
+  document.getElementById('userName').textContent = (row.name || email) + (row.status==='viewer' ? ' (읽기전용)' : '');
+  document.getElementById('manageBtn').hidden = !canEdit();
   showScreen('app');
   loadAll();
   subscribeRealtime();
@@ -606,15 +608,20 @@ function fillSelects(){
 }
 function openEventModal(id, dateStr){
   if(!state.loaded) return;
+  const isEdit = !!id;
+  if(!isEdit && !canEdit()) return; // 읽기전용은 신규 등록 불가
   if(state.lawyers.length===0 || state.types.length===0){
     alert('먼저 [관리]에서 변호사와 일정 타입을 등록해주세요.');
     return;
   }
   fillSelects();
   state.editingId = id;
-  const isEdit = !!id;
-  document.getElementById('evtModalTitle').textContent = isEdit?'일정 수정':'일정 등록';
-  document.getElementById('evtDeleteBtn').style.display = isEdit?'':'none';
+  const ro = isEdit && !canEdit(); // 읽기전용 보기 모드
+  ['fTitle','fLawyer','fType','fDate','fStart','fEnd','fLoc','fMemo']
+    .forEach(x=>document.getElementById(x).disabled = ro);
+  document.getElementById('evtSaveBtn').hidden = ro;
+  document.getElementById('evtModalTitle').textContent = ro ? '일정 보기' : (isEdit?'일정 수정':'일정 등록');
+  document.getElementById('evtDeleteBtn').style.display = (isEdit && !ro)?'':'none';
   if(isEdit){
     const e = state.events.find(x=>x.id===id);
     if(!e) return;
@@ -720,7 +727,7 @@ async function renderMembers(){
   const mm = document.getElementById('mngMembers');
   if(error){ mm.innerHTML = '<div class="mng-item">목록 조회 실패</div>'; return; }
   mm.innerHTML = '';
-  const stLabel = { pending:'대기', approved:'승인됨', admin:'관리자' };
+  const stLabel = { pending:'대기', viewer:'읽기전용', approved:'편집가능', admin:'관리자' };
   members.forEach(mb=>{
     const row = document.createElement('div');
     row.className='mng-item';
@@ -730,17 +737,22 @@ async function renderMembers(){
         <span>${esc(mb.name || '-')}</span>
         <span class="em">${esc(mb.email)}</span>
       </div>
-      <span class="st ${mb.status}">${stLabel[mb.status]}</span>`;
+      <span class="st ${mb.status==='viewer'?'pending':mb.status}">${stLabel[mb.status]}</span>`;
+    const setStatus = (status) => async ()=>{
+      const {error} = await db.from('members').update({status}).eq('id', mb.id);
+      if(error) alert('실패: '+error.message); else renderMembers();
+    };
+    const mkBtn = (label, fn)=>{
+      const b = document.createElement('button');
+      b.className='act'; b.textContent=label; b.onclick=fn; return b;
+    };
     if(!isSelf){
       if(mb.status==='pending'){
-        const a = document.createElement('button');
-        a.className='act'; a.textContent='승인';
-        a.onclick = async ()=>{
-          const {error} = await db.from('members').update({status:'approved'}).eq('id', mb.id);
-          if(error) alert('실패: '+error.message); else renderMembers();
-        };
-        row.appendChild(a);
+        row.appendChild(mkBtn('편집 승인', setStatus('approved')));
+        row.appendChild(mkBtn('읽기전용 승인', setStatus('viewer')));
       }else{
+        if(mb.status==='approved') row.appendChild(mkBtn('→읽기전용', setStatus('viewer')));
+        if(mb.status==='viewer') row.appendChild(mkBtn('→편집가능', setStatus('approved')));
         const d = document.createElement('button');
         d.className='del'; d.title='제거'; d.textContent='✕';
         d.onclick = async ()=>{
